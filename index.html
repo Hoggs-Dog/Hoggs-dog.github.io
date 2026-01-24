@@ -4,10 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Fuel Card Price Analysis Dashboard</title>
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/recharts@2.5.0/dist/Recharts.js"></script>
+    <script src="https://unpkg.com/@babel/standalone@7.23.5/babel.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -263,7 +263,7 @@
 
     <script type="text/babel">
         const { useState, useEffect } = React;
-        const { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } = Recharts;
+        const { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } = window.Recharts || {};
 
         const RefreshIcon = ({ spinning }) => (
             <svg className={`icon ${spinning ? 'spinner' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -303,7 +303,7 @@
             const [error, setError] = useState(null);
 
             const SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSH8koNGecLgCduEqSfurRr-hudolcyyCqvQaOSzCRk3dRhKia-rlslpLS1RAz2U8iwr8YjV8tT7X6n/pub?gid=1475315799&single=true&output=csv';
-            const REFRESH_INTERVAL = 180000; // 3 minutes
+            const REFRESH_INTERVAL = 180000;
 
             const parseCSV = (text) => {
                 const lines = text.trim().split('\n');
@@ -356,6 +356,12 @@
             };
 
             useEffect(() => {
+                // Check if Recharts loaded
+                if (!window.Recharts) {
+                    setError('Chart library failed to load. Please refresh the page.');
+                    return;
+                }
+                
                 fetchData();
                 const interval = setInterval(fetchData, REFRESH_INTERVAL);
                 return () => clearInterval(interval);
@@ -488,6 +494,17 @@
             };
 
             const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'];
+
+            // Check if Recharts is available
+            if (!window.Recharts) {
+                return (
+                    <div className="container">
+                        <div className="error-box">
+                            ⚠️ Chart library failed to load. Please refresh the page.
+                        </div>
+                    </div>
+                );
+            }
 
             return (
                 <div className="container">
@@ -679,7 +696,14 @@
             );
         };
 
-        ReactDOM.render(<FuelCardAnalyzer />, document.getElementById('root'));
+        // Wait for all libraries to load before rendering
+        window.addEventListener('load', () => {
+            if (window.React && window.ReactDOM && window.Recharts) {
+                ReactDOM.render(<FuelCardAnalyzer />, document.getElementById('root'));
+            } else {
+                document.getElementById('root').innerHTML = '<div style="padding: 2rem; text-align: center;">Error: Required libraries failed to load. Please refresh the page.</div>';
+            }
+        });
     </script>
 </body>
 </html>
