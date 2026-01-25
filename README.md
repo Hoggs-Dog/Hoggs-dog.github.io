@@ -6,10 +6,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Fuel Card Price Analysis Dashboard</title>
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script src="https://unpkg.com/recharts@2.5.0/dist/Recharts.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -144,9 +141,11 @@
         .card-title {
             font-size: 1.25rem;
             font-weight: 600;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
+        }
+        
+        .chart-container {
+            position: relative;
+            height: 300px;
         }
         
         .table-container {
@@ -235,11 +234,6 @@
             to { transform: rotate(360deg); }
         }
         
-        .icon {
-            width: 1rem;
-            height: 1rem;
-        }
-        
         @media (max-width: 768px) {
             h1 {
                 font-size: 1.875rem;
@@ -261,427 +255,421 @@
     </style>
 </head>
 <body>
-    <div id="root"></div>
+    <div id="root">
+        <div class="loading-container">
+            <div class="spinner"></div>
+            <p style="color: #4b5563;">Loading dashboard...</p>
+        </div>
+    </div>
 
-    <script type="text/babel">
-        const { useState, useEffect } = React;
-        const { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } = Recharts;
+    <script>
+        const SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSH8koNGecLgCduEqSfurRr-hudolcyyCqvQaOSzCRk3dRhKia-rlslpLS1RAz2U8iwr8YjV8tT7X6n/pub?gid=1475315799&single=true&output=csv';
+        const REFRESH_INTERVAL = 180000;
+        
+        let supplierChart = null;
+        let cardTypeChart = null;
+        let lastUpdated = null;
+        let isLoading = false;
 
-        const RefreshIcon = ({ spinning }) => (
-            <svg className={`icon ${spinning ? 'spinner' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
-        );
+        const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'];
 
-        const ClockIcon = () => (
-            <svg className="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-        );
+        function parseCSV(text) {
+            const lines = text.trim().split('\n');
+            if (lines.length === 0) return [];
+            
+            const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+            
+            return lines.slice(1).map(line => {
+                const values = line.match(/(".*?"|[^,]+)(?=\s*,|\s*$)/g) || [];
+                const row = {};
+                headers.forEach((header, i) => {
+                    row[header] = values[i]?.trim().replace(/^"|"$/g, '') || '';
+                });
+                return row;
+            }).filter(row => Object.values(row).some(val => val !== ''));
+        }
 
-        const DownloadIcon = () => (
-            <svg className="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-            </svg>
-        );
-
-        const TrendingDownIcon = () => (
-            <svg className="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{color: '#10b981', width: '1.25rem', height: '1.25rem'}}>
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-            </svg>
-        );
-
-        const ChartIcon = () => (
-            <svg className="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{color: '#3b82f6', width: '1.25rem', height: '1.25rem'}}>
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-            </svg>
-        );
-
-        const FuelCardAnalyzer = () => {
-            const [rawData, setRawData] = useState([]);
-            const [analysis, setAnalysis] = useState(null);
-            const [lastUpdated, setLastUpdated] = useState(null);
-            const [isLoading, setIsLoading] = useState(false);
-            const [error, setError] = useState(null);
-
-            const SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSH8koNGecLgCduEqSfurRr-hudolcyyCqvQaOSzCRk3dRhKia-rlslpLS1RAz2U8iwr8YjV8tT7X6n/pub?gid=1475315799&single=true&output=csv';
-            const REFRESH_INTERVAL = 180000; // 3 minutes
-
-            const parseCSV = (text) => {
-                const lines = text.trim().split('\n');
-                if (lines.length === 0) return [];
+        function analyzeData(data) {
+            const normalizedData = data.map(row => {
+                const fuelCardType = row['What Type Of Fuel Card Do You Have'] || row['Other FC'] || '';
+                const supplier = row['Fuel Card Supplier'] || row['Other Supplier'] || '';
                 
-                const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
-                
-                return lines.slice(1).map(line => {
-                    const values = line.match(/(".*?"|[^,]+)(?=\s*,|\s*$)/g) || [];
-                    const row = {};
-                    headers.forEach((header, i) => {
-                        row[header] = values[i]?.trim().replace(/^"|"$/g, '') || '';
-                    });
-                    return row;
-                }).filter(row => Object.values(row).some(val => val !== ''));
-            };
+                return {
+                    submittedAt: row['Submitted at'] || '',
+                    fuelCardType: fuelCardType,
+                    supplier: supplier,
+                    ppl: parseFloat((row['Current ppl'] || '0').replace(/[£$,]/g, ''))
+                };
+            }).filter(row => row.ppl > 0 && row.supplier && row.fuelCardType);
 
-            const fetchData = async () => {
-                setIsLoading(true);
-                setError(null);
-                
-                try {
-                    const response = await fetch(SHEET_URL);
-                    
-                    if (!response.ok) {
-                        throw new Error('Failed to fetch data from Google Sheets');
-                    }
-                    
-                    const text = await response.text();
-                    
-                    if (!text || text.trim().length === 0) {
-                        throw new Error('Empty response from Google Sheets');
-                    }
-                    
-                    const data = parseCSV(text);
-                    
-                    if (data.length > 0) {
-                        setRawData(data);
-                        analyzeData(data);
-                        setLastUpdated(new Date());
-                    } else {
-                        throw new Error('No valid data found in sheet');
-                    }
-                } catch (err) {
-                    setError(`Unable to load data: ${err.message}`);
-                    console.error('Error fetching data:', err);
-                } finally {
-                    setIsLoading(false);
+            if (normalizedData.length === 0) {
+                showError('No valid data found. Check your sheet format.');
+                return null;
+            }
+
+            const supplierStats = {};
+            normalizedData.forEach(row => {
+                if (!supplierStats[row.supplier]) {
+                    supplierStats[row.supplier] = { total: 0, count: 0, prices: [] };
                 }
-            };
+                supplierStats[row.supplier].total += row.ppl;
+                supplierStats[row.supplier].count += 1;
+                supplierStats[row.supplier].prices.push(row.ppl);
+            });
 
-            useEffect(() => {
-                fetchData();
-                const interval = setInterval(fetchData, REFRESH_INTERVAL);
-                return () => clearInterval(interval);
-            }, []);
+            const supplierAverages = Object.entries(supplierStats).map(([supplier, stats]) => ({
+                supplier,
+                avgPrice: stats.total / stats.count,
+                submissions: stats.count,
+                minPrice: Math.min(...stats.prices),
+                maxPrice: Math.max(...stats.prices)
+            })).sort((a, b) => a.avgPrice - b.avgPrice);
 
-            const analyzeData = (data) => {
-                if (!data || data.length === 0) return;
+            const cardTypeStats = {};
+            normalizedData.forEach(row => {
+                if (!cardTypeStats[row.fuelCardType]) {
+                    cardTypeStats[row.fuelCardType] = { total: 0, count: 0, prices: [] };
+                }
+                cardTypeStats[row.fuelCardType].total += row.ppl;
+                cardTypeStats[row.fuelCardType].count += 1;
+                cardTypeStats[row.fuelCardType].prices.push(row.ppl);
+            });
 
-                const normalizedData = data.map(row => {
-                    const fuelCardType = row['What Type Of Fuel Card Do You Have'] || row['Other FC'] || '';
-                    const supplier = row['Fuel Card Supplier'] || row['Other Supplier'] || '';
-                    
-                    return {
-                        submittedAt: row['Submitted at'] || '',
-                        fuelCardType: fuelCardType,
-                        supplier: supplier,
-                        ppl: parseFloat((row['Current ppl'] || '0').replace(/[£$,]/g, ''))
+            const cardTypeAverages = Object.entries(cardTypeStats).map(([cardType, stats]) => ({
+                cardType,
+                avgPrice: stats.total / stats.count,
+                submissions: stats.count,
+                minPrice: Math.min(...stats.prices),
+                maxPrice: Math.max(...stats.prices)
+            })).sort((a, b) => a.avgPrice - b.avgPrice);
+
+            const combinationStats = {};
+            normalizedData.forEach(row => {
+                const key = `${row.supplier} - ${row.fuelCardType}`;
+                if (!combinationStats[key]) {
+                    combinationStats[key] = { 
+                        supplier: row.supplier,
+                        cardType: row.fuelCardType,
+                        total: 0, 
+                        count: 0, 
+                        prices: [] 
                     };
-                }).filter(row => row.ppl > 0 && row.supplier && row.fuelCardType);
-
-                if (normalizedData.length === 0) {
-                    setError('No valid data found. Check your sheet format.');
-                    return;
                 }
+                combinationStats[key].total += row.ppl;
+                combinationStats[key].count += 1;
+                combinationStats[key].prices.push(row.ppl);
+            });
 
-                const supplierStats = {};
-                normalizedData.forEach(row => {
-                    if (!supplierStats[row.supplier]) {
-                        supplierStats[row.supplier] = { total: 0, count: 0, prices: [] };
-                    }
-                    supplierStats[row.supplier].total += row.ppl;
-                    supplierStats[row.supplier].count += 1;
-                    supplierStats[row.supplier].prices.push(row.ppl);
-                });
+            const combinations = Object.values(combinationStats).map(stats => ({
+                combination: `${stats.supplier} - ${stats.cardType}`,
+                supplier: stats.supplier,
+                cardType: stats.cardType,
+                avgPrice: stats.total / stats.count,
+                submissions: stats.count,
+                minPrice: Math.min(...stats.prices),
+                maxPrice: Math.max(...stats.prices)
+            })).sort((a, b) => a.avgPrice - b.avgPrice);
 
-                const supplierAverages = Object.entries(supplierStats).map(([supplier, stats]) => ({
-                    supplier,
-                    avgPrice: stats.total / stats.count,
-                    submissions: stats.count,
-                    minPrice: Math.min(...stats.prices),
-                    maxPrice: Math.max(...stats.prices)
-                })).sort((a, b) => a.avgPrice - b.avgPrice);
-
-                const cardTypeStats = {};
-                normalizedData.forEach(row => {
-                    if (!cardTypeStats[row.fuelCardType]) {
-                        cardTypeStats[row.fuelCardType] = { total: 0, count: 0, prices: [] };
-                    }
-                    cardTypeStats[row.fuelCardType].total += row.ppl;
-                    cardTypeStats[row.fuelCardType].count += 1;
-                    cardTypeStats[row.fuelCardType].prices.push(row.ppl);
-                });
-
-                const cardTypeAverages = Object.entries(cardTypeStats).map(([cardType, stats]) => ({
-                    cardType,
-                    avgPrice: stats.total / stats.count,
-                    submissions: stats.count,
-                    minPrice: Math.min(...stats.prices),
-                    maxPrice: Math.max(...stats.prices)
-                })).sort((a, b) => a.avgPrice - b.avgPrice);
-
-                const combinationStats = {};
-                normalizedData.forEach(row => {
-                    const key = `${row.supplier} - ${row.fuelCardType}`;
-                    if (!combinationStats[key]) {
-                        combinationStats[key] = { 
-                            supplier: row.supplier,
-                            cardType: row.fuelCardType,
-                            total: 0, 
-                            count: 0, 
-                            prices: [] 
-                        };
-                    }
-                    combinationStats[key].total += row.ppl;
-                    combinationStats[key].count += 1;
-                    combinationStats[key].prices.push(row.ppl);
-                });
-
-                const combinations = Object.values(combinationStats).map(stats => ({
-                    combination: `${stats.supplier} - ${stats.cardType}`,
-                    supplier: stats.supplier,
-                    cardType: stats.cardType,
-                    avgPrice: stats.total / stats.count,
-                    submissions: stats.count,
-                    minPrice: Math.min(...stats.prices),
-                    maxPrice: Math.max(...stats.prices)
-                })).sort((a, b) => a.avgPrice - b.avgPrice);
-
-                setAnalysis({
-                    supplierAverages,
-                    cardTypeAverages,
-                    combinations,
-                    totalSubmissions: normalizedData.length,
-                    uniqueSuppliers: Object.keys(supplierStats).length,
-                    uniqueCardTypes: Object.keys(cardTypeStats).length
-                });
+            return {
+                supplierAverages,
+                cardTypeAverages,
+                combinations,
+                totalSubmissions: normalizedData.length,
+                uniqueSuppliers: Object.keys(supplierStats).length,
+                uniqueCardTypes: Object.keys(cardTypeStats).length
             };
+        }
 
-            const formatLastUpdated = () => {
-                if (!lastUpdated) return 'Never';
-                const now = new Date();
-                const diff = Math.floor((now - lastUpdated) / 1000);
-                
-                if (diff < 60) return `${diff} seconds ago`;
-                if (diff < 3600) return `${Math.floor(diff / 60)} minutes ago`;
-                return lastUpdated.toLocaleTimeString();
-            };
+        function showError(message) {
+            document.getElementById('root').innerHTML = `
+                <div class="container">
+                    <div class="error-box">⚠️ ${message}</div>
+                </div>
+            `;
+        }
 
-            const exportToCSV = (dataArray, filename) => {
-                if (!dataArray || dataArray.length === 0) return;
-                
-                const headers = Object.keys(dataArray[0]);
-                const csv = [
-                    headers.join(','),
-                    ...dataArray.map(row => 
-                        headers.map(header => {
-                            const value = row[header];
-                            return typeof value === 'number' ? value.toFixed(2) : `"${value}"`;
-                        }).join(',')
-                    )
-                ].join('\n');
+        function formatLastUpdated() {
+            if (!lastUpdated) return 'Never';
+            const now = new Date();
+            const diff = Math.floor((now - lastUpdated) / 1000);
+            
+            if (diff < 60) return `${diff} seconds ago`;
+            if (diff < 3600) return `${Math.floor(diff / 60)} minutes ago`;
+            return lastUpdated.toLocaleTimeString();
+        }
 
-                const blob = new Blob([csv], { type: 'text/csv' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = filename;
-                a.click();
-                URL.revokeObjectURL(url);
-            };
+        function updateTimeDisplay() {
+            const timeEl = document.getElementById('update-time');
+            if (timeEl) {
+                timeEl.textContent = `Updated: ${formatLastUpdated()}`;
+            }
+        }
 
-            const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'];
+        function createCharts(analysis) {
+            // Supplier chart
+            if (supplierChart) supplierChart.destroy();
+            const supplierCtx = document.getElementById('supplierChart');
+            if (supplierCtx) {
+                supplierChart = new Chart(supplierCtx, {
+                    type: 'bar',
+                    data: {
+                        labels: analysis.supplierAverages.map(s => s.supplier),
+                        datasets: [{
+                            label: 'Average Price (ppl)',
+                            data: analysis.supplierAverages.map(s => s.avgPrice),
+                            backgroundColor: analysis.supplierAverages.map((_, i) => COLORS[i % COLORS.length]),
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                callbacks: {
+                                    label: (context) => `£${context.parsed.y.toFixed(2)}`
+                                }
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                title: { display: true, text: 'Price (ppl)' }
+                            }
+                        }
+                    }
+                });
+            }
 
-            return (
-                <div className="container">
-                    <div className="header">
+            // Card type chart
+            if (cardTypeChart) cardTypeChart.destroy();
+            const cardTypeCtx = document.getElementById('cardTypeChart');
+            if (cardTypeCtx) {
+                cardTypeChart = new Chart(cardTypeCtx, {
+                    type: 'bar',
+                    data: {
+                        labels: analysis.cardTypeAverages.map(c => c.cardType),
+                        datasets: [{
+                            label: 'Average Price (ppl)',
+                            data: analysis.cardTypeAverages.map(c => c.avgPrice),
+                            backgroundColor: analysis.cardTypeAverages.map((_, i) => COLORS[i % COLORS.length]),
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                callbacks: {
+                                    label: (context) => `£${context.parsed.y.toFixed(2)}`
+                                }
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                title: { display: true, text: 'Price (ppl)' }
+                            }
+                        }
+                    }
+                });
+            }
+        }
+
+        function renderDashboard(analysis) {
+            document.getElementById('root').innerHTML = `
+                <div class="container">
+                    <div class="header">
                         <div>
                             <h1>Fuel Card Price Analysis</h1>
-                            <p className="subtitle">Live data from user submissions - updated automatically</p>
+                            <p class="subtitle">Live data from user submissions - updated automatically</p>
                         </div>
-                        <div className="header-right">
-                            <button onClick={fetchData} disabled={isLoading} className="btn">
-                                <RefreshIcon spinning={isLoading} />
-                                Refresh Now
+                        <div class="header-right">
+                            <button onclick="fetchData()" id="refresh-btn" class="btn">
+                                🔄 Refresh Now
                             </button>
-                            <div className="update-time">
-                                <ClockIcon />
-                                <span>Updated: {formatLastUpdated()}</span>
+                            <div class="update-time">
+                                🕐 <span id="update-time">Updated: ${formatLastUpdated()}</span>
                             </div>
                         </div>
                     </div>
 
-                    {error && (
-                        <div className="error-box">
-                            ⚠️ {error}
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <h3 class="stat-label">Total Submissions</h3>
+                            <p class="stat-value blue">${analysis.totalSubmissions}</p>
                         </div>
-                    )}
-
-                    {analysis && (
-                        <>
-                            <div className="stats-grid">
-                                <div className="stat-card">
-                                    <h3 className="stat-label">Total Submissions</h3>
-                                    <p className="stat-value blue">{analysis.totalSubmissions}</p>
-                                </div>
-                                <div className="stat-card">
-                                    <h3 className="stat-label">Fuel Card Suppliers</h3>
-                                    <p className="stat-value green">{analysis.uniqueSuppliers}</p>
-                                </div>
-                                <div className="stat-card">
-                                    <h3 className="stat-label">Card Types</h3>
-                                    <p className="stat-value purple">{analysis.uniqueCardTypes}</p>
-                                </div>
-                            </div>
-
-                            <div className="charts-grid">
-                                <div className="card">
-                                    <h2 className="card-title">Average Price by Supplier</h2>
-                                    <ResponsiveContainer width="100%" height={300}>
-                                        <BarChart data={analysis.supplierAverages}>
-                                            <CartesianGrid strokeDasharray="3 3" />
-                                            <XAxis dataKey="supplier" angle={-45} textAnchor="end" height={100} interval={0} fontSize={12} />
-                                            <YAxis label={{ value: 'Price (ppl)', angle: -90, position: 'insideLeft' }} />
-                                            <Tooltip formatter={(value) => `£${value.toFixed(2)}`} />
-                                            <Bar dataKey="avgPrice">
-                                                {analysis.supplierAverages.map((entry, index) => (
-                                                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                                                ))}
-                                            </Bar>
-                                        </BarChart>
-                                    </ResponsiveContainer>
-                                </div>
-
-                                <div className="card">
-                                    <h2 className="card-title">Average Price by Card Type</h2>
-                                    <ResponsiveContainer width="100%" height={300}>
-                                        <BarChart data={analysis.cardTypeAverages}>
-                                            <CartesianGrid strokeDasharray="3 3" />
-                                            <XAxis dataKey="cardType" angle={-45} textAnchor="end" height={100} interval={0} fontSize={12} />
-                                            <YAxis label={{ value: 'Price (ppl)', angle: -90, position: 'insideLeft' }} />
-                                            <Tooltip formatter={(value) => `£${value.toFixed(2)}`} />
-                                            <Bar dataKey="avgPrice">
-                                                {analysis.cardTypeAverages.map((entry, index) => (
-                                                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                                                ))}
-                                            </Bar>
-                                        </BarChart>
-                                    </ResponsiveContainer>
-                                </div>
-                            </div>
-
-                            <div className="card">
-                                <h2 className="card-title">
-                                    <TrendingDownIcon />
-                                    Cheapest Suppliers (Average Price)
-                                </h2>
-                                <div className="table-container">
-                                    <table>
-                                        <thead>
-                                            <tr>
-                                                <th>Rank</th>
-                                                <th>Supplier</th>
-                                                <th className="text-right">Avg Price (ppl)</th>
-                                                <th className="text-right">Min</th>
-                                                <th className="text-right">Max</th>
-                                                <th className="text-right">Submissions</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {analysis.supplierAverages.map((item, idx) => (
-                                                <tr key={idx} className={idx < 3 ? 'row-highlight-green' : ''}>
-                                                    <td className="font-semibold">{idx + 1}</td>
-                                                    <td>{item.supplier}</td>
-                                                    <td className="text-right font-semibold">£{item.avgPrice.toFixed(2)}</td>
-                                                    <td className="text-right">£{item.minPrice.toFixed(2)}</td>
-                                                    <td className="text-right">£{item.maxPrice.toFixed(2)}</td>
-                                                    <td className="text-right">{item.submissions}</td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-
-                            <div className="card">
-                                <h2 className="card-title">
-                                    <ChartIcon />
-                                    Cheapest Card Types (Average Price)
-                                </h2>
-                                <div className="table-container">
-                                    <table>
-                                        <thead>
-                                            <tr>
-                                                <th>Rank</th>
-                                                <th>Card Type</th>
-                                                <th className="text-right">Avg Price (ppl)</th>
-                                                <th className="text-right">Min</th>
-                                                <th className="text-right">Max</th>
-                                                <th className="text-right">Submissions</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {analysis.cardTypeAverages.map((item, idx) => (
-                                                <tr key={idx} className={idx < 3 ? 'row-highlight-blue' : ''}>
-                                                    <td className="font-semibold">{idx + 1}</td>
-                                                    <td>{item.cardType}</td>
-                                                    <td className="text-right font-semibold">£{item.avgPrice.toFixed(2)}</td>
-                                                    <td className="text-right">£{item.minPrice.toFixed(2)}</td>
-                                                    <td className="text-right">£{item.maxPrice.toFixed(2)}</td>
-                                                    <td className="text-right">{item.submissions}</td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-
-                            <div className="card">
-                                <div className="card-header">
-                                    <h2 className="card-title">Best Supplier + Card Type Combinations</h2>
-                                    <button onClick={() => exportToCSV(analysis.combinations, 'combinations.csv')} className="btn btn-small">
-                                        <DownloadIcon />
-                                        Export
-                                    </button>
-                                </div>
-                                <div className="table-container">
-                                    <table>
-                                        <thead>
-                                            <tr>
-                                                <th>Rank</th>
-                                                <th>Supplier</th>
-                                                <th>Card Type</th>
-                                                <th className="text-right">Avg Price (ppl)</th>
-                                                <th className="text-right">Submissions</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {analysis.combinations.slice(0, 10).map((item, idx) => (
-                                                <tr key={idx} className={idx < 3 ? 'row-highlight-yellow' : ''}>
-                                                    <td className="font-semibold">{idx + 1}</td>
-                                                    <td>{item.supplier}</td>
-                                                    <td>{item.cardType}</td>
-                                                    <td className="text-right font-semibold">£{item.avgPrice.toFixed(2)}</td>
-                                                    <td className="text-right">{item.submissions}</td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        </>
-                    )}
-
-                    {!analysis && !error && (
-                        <div className="loading-container">
-                            {isLoading && <div className="spinner"></div>}
-                            <p style={{color: '#4b5563'}}>Loading data from Google Sheets...</p>
+                        <div class="stat-card">
+                            <h3 class="stat-label">Fuel Card Suppliers</h3>
+                            <p class="stat-value green">${analysis.uniqueSuppliers}</p>
                         </div>
-                    )}
+                        <div class="stat-card">
+                            <h3 class="stat-label">Card Types</h3>
+                            <p class="stat-value purple">${analysis.uniqueCardTypes}</p>
+                        </div>
+                    </div>
+
+                    <div class="charts-grid">
+                        <div class="card">
+                            <h2 class="card-title">Average Price by Supplier</h2>
+                            <div class="chart-container">
+                                <canvas id="supplierChart"></canvas>
+                            </div>
+                        </div>
+
+                        <div class="card">
+                            <h2 class="card-title">Average Price by Card Type</h2>
+                            <div class="chart-container">
+                                <canvas id="cardTypeChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <h2 class="card-title">📉 Cheapest Suppliers (Average Price)</h2>
+                        <div class="table-container">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Rank</th>
+                                        <th>Supplier</th>
+                                        <th class="text-right">Avg Price (ppl)</th>
+                                        <th class="text-right">Min</th>
+                                        <th class="text-right">Max</th>
+                                        <th class="text-right">Submissions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${analysis.supplierAverages.map((item, idx) => `
+                                        <tr class="${idx < 3 ? 'row-highlight-green' : ''}">
+                                            <td class="font-semibold">${idx + 1}</td>
+                                            <td>${item.supplier}</td>
+                                            <td class="text-right font-semibold">£${item.avgPrice.toFixed(2)}</td>
+                                            <td class="text-right">£${item.minPrice.toFixed(2)}</td>
+                                            <td class="text-right">£${item.maxPrice.toFixed(2)}</td>
+                                            <td class="text-right">${item.submissions}</td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <h2 class="card-title">📊 Cheapest Card Types (Average Price)</h2>
+                        <div class="table-container">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Rank</th>
+                                        <th>Card Type</th>
+                                        <th class="text-right">Avg Price (ppl)</th>
+                                        <th class="text-right">Min</th>
+                                        <th class="text-right">Max</th>
+                                        <th class="text-right">Submissions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${analysis.cardTypeAverages.map((item, idx) => `
+                                        <tr class="${idx < 3 ? 'row-highlight-blue' : ''}">
+                                            <td class="font-semibold">${idx + 1}</td>
+                                            <td>${item.cardType}</td>
+                                            <td class="text-right font-semibold">£${item.avgPrice.toFixed(2)}</td>
+                                            <td class="text-right">£${item.minPrice.toFixed(2)}</td>
+                                            <td class="text-right">£${item.maxPrice.toFixed(2)}</td>
+                                            <td class="text-right">${item.submissions}</td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <h2 class="card-title">🏆 Best Supplier + Card Type Combinations</h2>
+                        <div class="table-container">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Rank</th>
+                                        <th>Supplier</th>
+                                        <th>Card Type</th>
+                                        <th class="text-right">Avg Price (ppl)</th>
+                                        <th class="text-right">Submissions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${analysis.combinations.slice(0, 10).map((item, idx) => `
+                                        <tr class="${idx < 3 ? 'row-highlight-yellow' : ''}">
+                                            <td class="font-semibold">${idx + 1}</td>
+                                            <td>${item.supplier}</td>
+                                            <td>${item.cardType}</td>
+                                            <td class="text-right font-semibold">£${item.avgPrice.toFixed(2)}</td>
+                                            <td class="text-right">${item.submissions}</td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
                 </div>
-            );
-        };
+            `;
 
-        ReactDOM.render(<FuelCardAnalyzer />, document.getElementById('root'));
+            createCharts(analysis);
+        }
+
+        async function fetchData() {
+            if (isLoading) return;
+            isLoading = true;
+            
+            const btn = document.getElementById('refresh-btn');
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = '⏳ Loading...';
+            }
+            
+            try {
+                const response = await fetch(SHEET_URL);
+                
+                if (!response.ok) {
+                    throw new Error('Failed to fetch data from Google Sheets');
+                }
+                
+                const text = await response.text();
+                
+                if (!text || text.trim().length === 0) {
+                    throw new Error('Empty response from Google Sheets');
+                }
+                
+                const data = parseCSV(text);
+                const analysis = analyzeData(data);
+                
+                if (analysis) {
+                    renderDashboard(analysis);
+                    lastUpdated = new Date();
+                }
+            } catch (err) {
+                showError(`Unable to load data: ${err.message}`);
+                console.error('Error fetching data:', err);
+            } finally {
+                isLoading = false;
+                const btn = document.getElementById('refresh-btn');
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = '🔄 Refresh Now';
+                }
+            }
+        }
+
+        // Initial load
+        if (typeof Chart !== 'undefined') {
+            fetchData();
+            setInterval(fetchData, REFRESH_INTERVAL);
+            setInterval(updateTimeDisplay, 10000); // Update time every 10 seconds
+        } else {
+            showError('Chart library failed to load. Please refresh the page.');
+        }
     </script>
 </body>
 </html>
