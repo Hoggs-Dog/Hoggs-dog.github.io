@@ -277,19 +277,65 @@
             const lines = text.trim().split('\n');
             if (lines.length === 0) return [];
             
-            const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
-            console.log('CSV Headers:', headers);
+            // Parse headers
+            const headerLine = lines[0];
+            const headers = [];
+            let current = '';
+            let inQuotes = false;
             
-            const rows = lines.slice(1).map(line => {
-                const values = line.match(/(".*?"|[^,]+)(?=\s*,|\s*$)/g) || [];
+            for (let i = 0; i < headerLine.length; i++) {
+                const char = headerLine[i];
+                if (char === '"') {
+                    inQuotes = !inQuotes;
+                } else if (char === ',' && !inQuotes) {
+                    headers.push(current.trim().replace(/^"|"$/g, ''));
+                    current = '';
+                } else {
+                    current += char;
+                }
+            }
+            headers.push(current.trim().replace(/^"|"$/g, ''));
+            
+            console.log('CSV Headers:', headers);
+            console.log('Expected columns:', headers.length);
+            
+            // Parse data rows
+            const rows = [];
+            for (let lineIdx = 1; lineIdx < lines.length; lineIdx++) {
+                const line = lines[lineIdx];
+                if (!line.trim()) continue;
+                
+                const values = [];
+                let current = '';
+                let inQuotes = false;
+                
+                for (let i = 0; i < line.length; i++) {
+                    const char = line[i];
+                    if (char === '"') {
+                        inQuotes = !inQuotes;
+                    } else if (char === ',' && !inQuotes) {
+                        values.push(current.trim().replace(/^"|"$/g, ''));
+                        current = '';
+                    } else {
+                        current += char;
+                    }
+                }
+                values.push(current.trim().replace(/^"|"$/g, ''));
+                
+                // Create row object
                 const row = {};
                 headers.forEach((header, i) => {
-                    row[header] = values[i]?.trim().replace(/^"|"$/g, '') || '';
+                    row[header] = values[i] || '';
                 });
-                return row;
-            }).filter(row => Object.values(row).some(val => val !== ''));
+                
+                // Only include rows that have at least some data
+                if (Object.values(row).some(val => val !== '')) {
+                    rows.push(row);
+                }
+            }
             
             console.log(`Parsed ${rows.length} rows from CSV`);
+            console.log('First row:', rows[0]);
             return rows;
         }
 
