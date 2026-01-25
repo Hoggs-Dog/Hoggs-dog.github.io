@@ -277,55 +277,48 @@
             const lines = text.trim().split('\n');
             if (lines.length === 0) return [];
             
-            // Parse headers
-            const headerLine = lines[0];
-            const headers = [];
-            let current = '';
-            let inQuotes = false;
-            
-            for (let i = 0; i < headerLine.length; i++) {
-                const char = headerLine[i];
-                if (char === '"') {
-                    inQuotes = !inQuotes;
-                } else if (char === ',' && !inQuotes) {
-                    headers.push(current.trim().replace(/^"|"$/g, ''));
-                    current = '';
-                } else {
-                    current += char;
-                }
-            }
-            headers.push(current.trim().replace(/^"|"$/g, ''));
-            
-            console.log('CSV Headers:', headers);
-            console.log('Expected columns:', headers.length);
-            
-            // Parse data rows
-            const rows = [];
-            for (let lineIdx = 1; lineIdx < lines.length; lineIdx++) {
-                const line = lines[lineIdx];
-                if (!line.trim()) continue;
-                
-                const values = [];
+            // Parse CSV properly handling empty fields
+            function parseLine(line) {
+                const result = [];
                 let current = '';
                 let inQuotes = false;
                 
                 for (let i = 0; i < line.length; i++) {
                     const char = line[i];
+                    
                     if (char === '"') {
                         inQuotes = !inQuotes;
                     } else if (char === ',' && !inQuotes) {
-                        values.push(current.trim().replace(/^"|"$/g, ''));
+                        result.push(current);
                         current = '';
                     } else {
                         current += char;
                     }
                 }
-                values.push(current.trim().replace(/^"|"$/g, ''));
+                result.push(current); // Don't forget the last field
                 
-                // Create row object
+                return result.map(field => field.trim().replace(/^"|"$/g, ''));
+            }
+            
+            const headers = parseLine(lines[0]);
+            console.log('CSV Headers:', headers);
+            console.log('Expected columns:', headers.length);
+            
+            const rows = [];
+            for (let i = 1; i < lines.length; i++) {
+                const line = lines[i].trim();
+                if (!line) continue;
+                
+                const values = parseLine(line);
+                
+                // Make sure we have the right number of columns
+                while (values.length < headers.length) {
+                    values.push('');
+                }
+                
                 const row = {};
-                headers.forEach((header, i) => {
-                    row[header] = values[i] || '';
+                headers.forEach((header, idx) => {
+                    row[header] = values[idx] || '';
                 });
                 
                 // Only include rows that have at least some data
@@ -335,7 +328,10 @@
             }
             
             console.log(`Parsed ${rows.length} rows from CSV`);
-            console.log('First row:', rows[0]);
+            if (rows.length > 0) {
+                console.log('First row:', rows[0]);
+                console.log('Second row:', rows[1]);
+            }
             return rows;
         }
 
