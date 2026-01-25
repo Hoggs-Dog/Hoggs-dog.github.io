@@ -278,8 +278,9 @@
             if (lines.length === 0) return [];
             
             const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+            console.log('CSV Headers:', headers);
             
-            return lines.slice(1).map(line => {
+            const rows = lines.slice(1).map(line => {
                 const values = line.match(/(".*?"|[^,]+)(?=\s*,|\s*$)/g) || [];
                 const row = {};
                 headers.forEach((header, i) => {
@@ -287,25 +288,40 @@
                 });
                 return row;
             }).filter(row => Object.values(row).some(val => val !== ''));
+            
+            console.log(`Parsed ${rows.length} rows from CSV`);
+            return rows;
         }
 
         function analyzeData(data) {
             const normalizedData = data.map(row => {
-                const fuelCardType = row['What Type Of Fuel Card Do You Have'] || row['Other FC'] || 'Unknown Card';
+                // Get fuel card type, default to "Unknown" if blank
+                const fuelCardType = row['What Type Of Fuel Card Do You Have'] || row['Other FC'] || 'Unknown';
+                // Get supplier, default to empty string
                 const supplier = row['Fuel Card Supplier'] || row['Other Supplier'] || '';
+                // Get price, parse to number
+                const pplString = row['Current ppl'] || '0';
+                const ppl = parseFloat(pplString.toString().replace(/[£$,]/g, ''));
                 
                 return {
                     submittedAt: row['Submitted at'] || '',
                     fuelCardType: fuelCardType,
                     supplier: supplier,
-                    ppl: parseFloat((row['Current ppl'] || '0').replace(/[£$,]/g, ''))
+                    ppl: ppl
                 };
-            }).filter(row => row.ppl > 0 && row.supplier);
+            }).filter(row => {
+                // Only filter: must have price > 0 AND must have supplier
+                const hasValidPrice = row.ppl > 0;
+                const hasSupplier = row.supplier && row.supplier.trim() !== '';
+                return hasValidPrice && hasSupplier;
+            });
 
             if (normalizedData.length === 0) {
-                showError('No valid data found. Check your sheet format.');
+                showError('No valid data found. Make sure your sheet has rows with both Supplier and Price filled in.');
                 return null;
             }
+
+            console.log(`Found ${normalizedData.length} valid entries`);
 
             const supplierStats = {};
             normalizedData.forEach(row => {
