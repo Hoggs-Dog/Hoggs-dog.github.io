@@ -294,6 +294,12 @@
         }
 
         function analyzeData(data) {
+            console.log('First row sample:', data[0]);
+            
+            let missingSupplier = 0;
+            let missingPrice = 0;
+            let bothValid = 0;
+            
             const normalizedData = data.map(row => {
                 // Get fuel card type, default to "Unknown" if blank
                 const fuelCardType = row['What Type Of Fuel Card Do You Have'] || row['Other FC'] || 'Unknown';
@@ -313,8 +319,15 @@
                 // Only filter: must have price > 0 AND must have supplier
                 const hasValidPrice = row.ppl > 0;
                 const hasSupplier = row.supplier && row.supplier.trim() !== '';
+                
+                if (!hasSupplier) missingSupplier++;
+                if (!hasValidPrice) missingPrice++;
+                if (hasValidPrice && hasSupplier) bothValid++;
+                
                 return hasValidPrice && hasSupplier;
             });
+
+            console.log(`Filter results: ${bothValid} valid, ${missingSupplier} missing supplier, ${missingPrice} missing price`);
 
             if (normalizedData.length === 0) {
                 showError('No valid data found. Make sure your sheet has rows with both Supplier and Price filled in.');
