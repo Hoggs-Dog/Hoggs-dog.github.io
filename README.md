@@ -291,7 +291,7 @@
 
         function analyzeData(data) {
             const normalizedData = data.map(row => {
-                const fuelCardType = row['What Type Of Fuel Card Do You Have'] || row['Other FC'] || '';
+                const fuelCardType = row['What Type Of Fuel Card Do You Have'] || row['Other FC'] || 'Unknown Card';
                 const supplier = row['Fuel Card Supplier'] || row['Other Supplier'] || '';
                 
                 return {
@@ -300,7 +300,7 @@
                     supplier: supplier,
                     ppl: parseFloat((row['Current ppl'] || '0').replace(/[£$,]/g, ''))
                 };
-            }).filter(row => row.ppl > 0 && row.supplier && row.fuelCardType);
+            }).filter(row => row.ppl > 0 && row.supplier);
 
             if (normalizedData.length === 0) {
                 showError('No valid data found. Check your sheet format.');
