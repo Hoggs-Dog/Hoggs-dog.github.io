@@ -263,6 +263,143 @@
     </div>
 
     <script>
+        let currentAnalysis = null;
+
+        function compareUserPrice() {
+            const priceInput = document.getElementById('user-price-input');
+            const supplierInput = document.getElementById('user-supplier-input');
+            const resultDiv = document.getElementById('comparison-result');
+            
+            const userPrice = parseFloat(priceInput.value);
+            const userSupplier = supplierInput.value.trim();
+            
+            if (!userPrice || userPrice <= 0) {
+                resultDiv.style.display = 'none';
+                return;
+            }
+            
+            if (!currentAnalysis) return;
+            
+            // Calculate overall average
+            const allPrices = currentAnalysis.supplierAverages.map(s => s.avgPrice);
+            const overallAvg = allPrices.reduce((a, b) => a + b, 0) / allPrices.length;
+            const cheapest = currentAnalysis.supplierAverages[0];
+            const mostExpensive = currentAnalysis.supplierAverages[currentAnalysis.supplierAverages.length - 1];
+            
+            // Calculate savings
+            const savingsVsAvg = userPrice - overallAvg;
+            const savingsVsCheapest = userPrice - cheapest.avgPrice;
+            
+            // Find user's supplier in data if provided
+            let userSupplierData = null;
+            if (userSupplier) {
+                userSupplierData = currentAnalysis.supplierAverages.find(
+                    s => s.supplier.toLowerCase() === userSupplier.toLowerCase()
+                );
+            }
+            
+            // Determine status
+            let statusEmoji, statusText, statusColor;
+            if (userPrice <= cheapest.avgPrice) {
+                statusEmoji = '🏆';
+                statusText = 'Excellent! You have one of the best prices!';
+                statusColor = '#10b981';
+            } else if (userPrice <= overallAvg) {
+                statusEmoji = '✅';
+                statusText = 'Good deal! You\'re paying below average.';
+                statusColor = '#10b981';
+            } else if (userPrice <= overallAvg * 1.1) {
+                statusEmoji = '⚠️';
+                statusText = 'Fair price, but you could save more.';
+                statusColor = '#f59e0b';
+            } else {
+                statusEmoji = '❌';
+                statusText = 'You\'re overpaying! Consider switching.';
+                statusColor = '#ef4444';
+            }
+            
+            // Build result HTML
+            let html = `
+                <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem;">
+                    <span style="font-size: 3rem;">${statusEmoji}</span>
+                    <div>
+                        <h3 style="margin: 0; font-size: 1.25rem; color: white;">${statusText}</h3>
+                        <p style="margin: 0.25rem 0 0 0; opacity: 0.9;">Your price: £${userPrice.toFixed(2)} per liter</p>
+                    </div>
+                </div>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-top: 1rem;">
+                    <div style="background: rgba(255,255,255,0.15); padding: 1rem; border-radius: 0.375rem;">
+                        <div style="font-size: 0.875rem; opacity: 0.9;">vs. Market Average</div>
+                        <div style="font-size: 1.5rem; font-weight: bold; color: ${savingsVsAvg > 0 ? '#ef4444' : '#10b981'}">
+                            ${savingsVsAvg > 0 ? '+' : ''}£${Math.abs(savingsVsAvg).toFixed(2)}
+                        </div>
+                        <div style="font-size: 0.75rem; opacity: 0.8;">Average: £${overallAvg.toFixed(2)}</div>
+                    </div>
+                    <div style="background: rgba(255,255,255,0.15); padding: 1rem; border-radius: 0.375rem;">
+                        <div style="font-size: 0.875rem; opacity: 0.9;">vs. Cheapest Option</div>
+                        <div style="font-size: 1.5rem; font-weight: bold; color: ${savingsVsCheapest > 0 ? '#ef4444' : '#10b981'}">
+                            ${savingsVsCheapest > 0 ? '+' : ''}£${Math.abs(savingsVsCheapest).toFixed(2)}
+                        </div>
+                        <div style="font-size: 0.75rem; opacity: 0.8;">${cheapest.supplier}: £${cheapest.avgPrice.toFixed(2)}</div>
+                    </div>
+                </div>
+            `;
+            
+            if (savingsVsCheapest > 0) {
+                const annualSavings = savingsVsCheapest * 1000; // Assuming 1000 liters/year
+                html += `
+                    <div style="margin-top: 1rem; padding: 1rem; background: rgba(255,255,255,0.15); border-radius: 0.375rem;">
+                        <strong>💡 Potential Savings:</strong> Switch to ${cheapest.supplier} and save approximately <strong>£${annualSavings.toFixed(0)}</strong> per year (based on 1,000 liters annually)
+                    </div>
+                `;
+            }
+            
+            if (userSupplierData) {
+                html += `
+                    <div style="margin-top: 1rem; padding: 1rem; background: rgba(255,255,255,0.15); border-radius: 0.375rem;">
+                        <strong>📊 ${userSupplier} Stats:</strong><br/>
+                        Average: £${userSupplierData.avgPrice.toFixed(2)} | 
+                        Range: £${userSupplierData.minPrice.toFixed(2)} - £${userSupplierData.maxPrice.toFixed(2)} | 
+                        Rank: #${currentAnalysis.supplierAverages.indexOf(userSupplierData) + 1} of ${currentAnalysis.supplierAverages.length}
+                    </div>
+                `;
+            }
+            
+            resultDiv.innerHTML = html;
+            resultDiv.style.display = 'block';
+            
+            // Highlight table rows
+            highlightTableRows(userPrice, userSupplier);
+        }
+        
+        function highlightTableRows(userPrice, userSupplier) {
+            const rows = document.querySelectorAll('#supplier-table tbody tr');
+            rows.forEach(row => {
+                const supplier = row.getAttribute('data-supplier');
+                const price = parseFloat(row.getAttribute('data-price'));
+                
+                // Remove existing highlights
+                row.style.backgroundColor = '';
+                row.style.border = '';
+                
+                // Highlight cheaper options
+                if (price < userPrice) {
+                    row.style.backgroundColor = '#f0fdf4';
+                }
+                
+                // Highlight more expensive options
+                if (price > userPrice) {
+                    row.style.backgroundColor = '#fef2f2';
+                }
+                
+                // Highlight user's supplier if provided
+                if (userSupplier && supplier && supplier.toLowerCase() === userSupplier.toLowerCase()) {
+                    row.style.border = '2px solid #667eea';
+                    row.style.backgroundColor = '#ede9fe';
+                }
+            });
+        }
+
         const SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSH8koNGecLgCduEqSfurRr-hudolcyyCqvQaOSzCRk3dRhKia-rlslpLS1RAz2U8iwr8YjV8tT7X6n/pub?gid=1475315799&single=true&output=csv';
         const REFRESH_INTERVAL = 180000;
         
@@ -566,6 +703,39 @@
                         </div>
                     </div>
 
+                    <!-- Price Comparison Tool -->
+                    <div class="card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; margin-bottom: 2rem;">
+                        <h2 style="color: white; margin-bottom: 1rem; font-size: 1.5rem;">💡 Compare Your Price</h2>
+                        <div style="display: flex; gap: 1rem; align-items: end; flex-wrap: wrap;">
+                            <div style="flex: 1; min-width: 200px;">
+                                <label style="display: block; margin-bottom: 0.5rem; font-size: 0.875rem;">Your Current Price (ppl)</label>
+                                <input 
+                                    type="number" 
+                                    id="user-price-input" 
+                                    placeholder="e.g., 1.20"
+                                    step="0.01"
+                                    style="width: 100%; padding: 0.75rem; border: none; border-radius: 0.375rem; font-size: 1rem;"
+                                    onchange="compareUserPrice()"
+                                />
+                            </div>
+                            <div style="flex: 1; min-width: 200px;">
+                                <label style="display: block; margin-bottom: 0.5rem; font-size: 0.875rem;">Your Supplier (Optional)</label>
+                                <input 
+                                    type="text" 
+                                    id="user-supplier-input" 
+                                    placeholder="e.g., Shell"
+                                    style="width: 100%; padding: 0.75rem; border: none; border-radius: 0.375rem; font-size: 1rem;"
+                                    onchange="compareUserPrice()"
+                                />
+                            </div>
+                            <button onclick="compareUserPrice()" class="btn" style="background: white; color: #667eea; font-weight: bold;">
+                                Compare Now
+                            </button>
+                        </div>
+                        <div id="comparison-result" style="margin-top: 1.5rem; padding: 1rem; background: rgba(255,255,255,0.1); border-radius: 0.375rem; display: none;">
+                        </div>
+                    </div>
+
                     <div class="stats-grid">
                         <div class="stat-card">
                             <h3 class="stat-label">Total Submissions</h3>
@@ -600,7 +770,7 @@
                     <div class="card">
                         <h2 class="card-title">📉 Cheapest Suppliers (Average Price)</h2>
                         <div class="table-container">
-                            <table>
+                            <table id="supplier-table">
                                 <thead>
                                     <tr>
                                         <th>Rank</th>
@@ -613,7 +783,7 @@
                                 </thead>
                                 <tbody>
                                     ${analysis.supplierAverages.map((item, idx) => `
-                                        <tr class="${idx < 3 ? 'row-highlight-green' : ''}">
+                                        <tr class="${idx < 3 ? 'row-highlight-green' : ''}" data-supplier="${item.supplier}" data-price="${item.avgPrice}">
                                             <td class="font-semibold">${idx + 1}</td>
                                             <td>${item.supplier}</td>
                                             <td class="text-right font-semibold">£${item.avgPrice.toFixed(2)}</td>
@@ -718,6 +888,7 @@
                 
                 if (analysis) {
                     renderDashboard(analysis);
+                    currentAnalysis = analysis; // Store for comparison
                     lastUpdated = new Date();
                 }
             } catch (err) {
