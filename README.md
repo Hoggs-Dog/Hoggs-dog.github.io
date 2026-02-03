@@ -365,6 +365,22 @@
                 `;
             }
             
+            // Add submit to database button
+            const tallyUrl = `https://tally.so/r/44Q425?Current+ppl=${encodeURIComponent(userPrice)}${userSupplier ? '&Fuel+Card+Supplier=' + encodeURIComponent(userSupplier) : ''}`;
+            html += `
+                <div style="margin-top: 1.5rem; text-align: center; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.2);">
+                    <p style="margin-bottom: 1rem; font-size: 0.875rem; opacity: 0.9;">
+                        🤝 Help others make informed decisions!
+                    </p>
+                    <a href="${tallyUrl}" target="_blank" style="display: inline-block; background: white; color: #667eea; padding: 0.75rem 2rem; border-radius: 0.5rem; font-weight: bold; text-decoration: none; font-size: 1rem; box-shadow: 0 4px 6px rgba(0,0,0,0.1); transition: transform 0.2s;" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
+                        📊 Submit Your Price to Database
+                    </a>
+                    <p style="margin-top: 0.75rem; font-size: 0.75rem; opacity: 0.7;">
+                        Your data helps ${currentAnalysis.totalSubmissions}+ users find better deals
+                    </p>
+                </div>
+            `;
+            
             resultDiv.innerHTML = html;
             resultDiv.style.display = 'block';
             
