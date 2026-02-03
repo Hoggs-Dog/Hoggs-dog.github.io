@@ -728,7 +728,7 @@
                                 <input 
                                     type="number" 
                                     id="user-price-input" 
-                                    placeholder="e.g., 1.20"
+                                    placeholder="e.g., 120"
                                     step="0.01"
                                     style="width: 100%; padding: 0.75rem; border: none; border-radius: 0.375rem; font-size: 1rem;"
                                     onchange="compareUserPrice()"
