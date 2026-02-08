@@ -628,15 +628,19 @@
         }
 
         function createCharts(analysis) {
-            // Calculate min price for y-axis scaling
+            // Calculate min and max prices for y-axis scaling
             const allSupplierPrices = analysis.supplierAverages.map(s => s.avgPrice);
             const allCardPrices = analysis.cardTypeAverages.map(c => c.avgPrice);
             const minSupplierPrice = Math.min(...allSupplierPrices);
+            const maxSupplierPrice = Math.max(...allSupplierPrices);
             const minCardPrice = Math.min(...allCardPrices);
+            const maxCardPrice = Math.max(...allCardPrices);
             
-            // Set y-axis to start 10 ppl below the lowest price
+            // Set y-axis to start 10 ppl below lowest and end 10 ppl above highest
             const supplierYMin = Math.max(0, minSupplierPrice - 10);
+            const supplierYMax = maxSupplierPrice + 10;
             const cardYMin = Math.max(0, minCardPrice - 10);
+            const cardYMax = maxCardPrice + 10;
             
             // Supplier chart
             if (supplierChart) supplierChart.destroy();
@@ -666,6 +670,7 @@
                         scales: {
                             y: {
                                 min: supplierYMin,
+                                max: supplierYMax,
                                 title: { display: true, text: 'Price (ppl)' }
                             }
                         }
@@ -701,6 +706,7 @@
                         scales: {
                             y: {
                                 min: cardYMin,
+                                max: cardYMax,
                                 title: { display: true, text: 'Price (ppl)' }
                             }
                         }
