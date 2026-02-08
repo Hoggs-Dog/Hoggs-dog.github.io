@@ -1,3 +1,4 @@
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -627,6 +628,16 @@
         }
 
         function createCharts(analysis) {
+            // Calculate min price for y-axis scaling
+            const allSupplierPrices = analysis.supplierAverages.map(s => s.avgPrice);
+            const allCardPrices = analysis.cardTypeAverages.map(c => c.avgPrice);
+            const minSupplierPrice = Math.min(...allSupplierPrices);
+            const minCardPrice = Math.min(...allCardPrices);
+            
+            // Set y-axis to start 10 ppl below the lowest price
+            const supplierYMin = Math.max(0, minSupplierPrice - 10);
+            const cardYMin = Math.max(0, minCardPrice - 10);
+            
             // Supplier chart
             if (supplierChart) supplierChart.destroy();
             const supplierCtx = document.getElementById('supplierChart');
@@ -654,8 +665,13 @@
                         },
                         scales: {
                             y: {
-                                beginAtZero: true,
-                                title: { display: true, text: 'Price (ppl)' }
+                                min: supplierYMin,
+                                title: { display: true, text: 'Price (ppl)' },
+                                ticks: {
+                                    callback: function(value) {
+                                        return '£' + value.toFixed(0);
+                                    }
+                                }
                             }
                         }
                     }
@@ -689,8 +705,13 @@
                         },
                         scales: {
                             y: {
-                                beginAtZero: true,
-                                title: { display: true, text: 'Price (ppl)' }
+                                min: cardYMin,
+                                title: { display: true, text: 'Price (ppl)' },
+                                ticks: {
+                                    callback: function(value) {
+                                        return '£' + value.toFixed(0);
+                                    }
+                                }
                             }
                         }
                     }
@@ -725,7 +746,7 @@
                                 <input 
                                     type="number" 
                                     id="user-price-input" 
-                                    placeholder="e.g., 120"
+                                    placeholder="e.g., 1.20"
                                     step="0.01"
                                     style="width: 100%; padding: 0.75rem; border: none; border-radius: 0.375rem; font-size: 1rem;"
                                     onchange="compareUserPrice()"
