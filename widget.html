@@ -1,1 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fuel Card Prices - Quick View</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 2rem;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .widget {
+            background: white;
+            border-radius: 1rem;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 500px;
+            width: 100%;
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 1.5rem;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 1.5rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .header p {
+            font-size: 0.875rem;
+            opacity: 0.9;
+        }
+        
+        .content {
+            padding: 1.5rem;
+        }
+        
+        .supplier-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem;
+            margin-bottom: 0.75rem;
+            background: #f9fafb;
+            border-radius: 0.5rem;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        .supplier-item:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+        
+        .supplier-item.top-3 {
+            background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
+            border-left: 4px solid #10b981;
+        }
+        
+        .rank {
+            font-size: 1.25rem;
+            font-weight: bold;
+            color: #667eea;
+            min-width: 40px;
+        }
+        
+        .supplier-info {
+            flex: 1;
+            margin: 0 1rem;
+        }
+        
+        .supplier-name {
+            font-weight: 600;
+            color: #1f2937;
+            margin-bottom: 0.25rem;
+        }
+        
+        .submissions {
+            font-size: 0.75rem;
+            color: #6b7280;
+        }
+        
+        .price {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #667eea;
+        }
+        
+        .price-unit {
+            font-size: 0.875rem;
+            color: #6b7280;
+            margin-left: 0.25rem;
+        }
+        
+        .footer {
+            padding: 1rem 1.5rem;
+            background: #f9fafb;
+            text-align: center;
+            border-top: 1px solid #e5e7eb;
+        }
+        
+        .footer a {
+            color: #667eea;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 0.875rem;
+        }
+        
+        .footer a:hover {
+            text-decoration: underline;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 3rem;
+            color: #6b7280;
+        }
+        
+        .spinner {
+            display: inline-block;
+            width: 2rem;
+            height: 2rem;
+            border: 3px solid #e5e7eb;
+            border-top-color: #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 1rem;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .error {
+            background: #fef2f2;
+            color: #991b1b;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            margin: 1rem;
+        }
+        
+        @media (max-width: 640px) {
+            body {
+                padding: 1rem;
+            }
+            
+            .header h1 {
+                font-size: 1.25rem;
+            }
+            
+            .supplier-item {
+                flex-direction: column;
+                text-align: center;
+            }
+            
+            .rank {
+                margin-bottom: 0.5rem;
+            }
+            
+            .supplier-info {
+                margin: 0.5rem 0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="widget">
+        <div class="header">
+            <h1>⛽ Fuel Card Prices</h1>
+            <p id="update-time">Loading latest prices...</p>
+        </div>
+        
+        <div class="content" id="content">
+            <div class="loading">
+                <div class="spinner"></div>
+                <p>Loading data...</p>
+            </div>
+        </div>
+        
+        <div class="footer">
+            <a href="https://hoggs-dog.github.io/" target="_blank">View Full Dashboard →</a>
+        </div>
+    </div>
 
+    <script>
+        const SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSH8koNGecLgCduEqSfurRr-hudolcyyCqvQaOSzCRk3dRhKia-rlslpLS1RAz2U8iwr8YjV8tT7X6n/pub?gid=1475315799&single=true&output=csv';
+        
+        function parseCSV(text) {
+            const lines = text.trim().split('\n');
+            if (lines.length === 0) return [];
+            
+            function parseLine(line) {
+                const result = [];
+                let current = '';
+                let inQuotes = false;
+                
+                for (let i = 0; i < line.length; i++) {
+                    const char = line[i];
+                    
+                    if (char === '"') {
+                        inQuotes = !inQuotes;
+                    } else if (char === ',' && !inQuotes) {
+                        result.push(current);
+                        current = '';
+                    } else {
+                        current += char;
+                    }
+                }
+                result.push(current);
+                
+                return result.map(field => field.trim().replace(/^"|"$/g, ''));
+            }
+            
+            const headers = parseLine(lines[0]);
+            const rows = [];
+            
+            for (let i = 1; i < lines.length; i++) {
+                const line = lines[i].trim();
+                if (!line) continue;
+                
+                const values = parseLine(line);
+                while (values.length < headers.length) {
+                    values.push('');
+                }
+                
+                const row = {};
+                headers.forEach((header, idx) => {
+                    row[header] = values[idx] || '';
+                });
+                
+                if (Object.values(row).some(val => val !== '')) {
+                    rows.push(row);
+                }
+            }
+            
+            return rows;
+        }
+        
+        function analyzeData(data) {
+            const normalizedData = data.map(row => {
+                const fuelCardType = row['What Type Of Fuel Card Do You Have'] || row['Other FC'] || 'Unknown';
+                const supplier = row['Fuel Card Supplier'] || row['Other Supplier'] || '';
+                const pplString = row['Current ppl'] || '0';
+                const ppl = parseFloat(pplString.toString().replace(/[£$,]/g, ''));
+                
+                return {
+                    fuelCardType: fuelCardType,
+                    supplier: supplier,
+                    ppl: ppl
+                };
+            }).filter(row => {
+                const hasValidPrice = row.ppl > 0;
+                const hasSupplier = row.supplier && row.supplier.trim() !== '';
+                return hasValidPrice && hasSupplier;
+            });
+
+            if (normalizedData.length === 0) {
+                return null;
+            }
+
+            const supplierStats = {};
+            normalizedData.forEach(row => {
+                if (!supplierStats[row.supplier]) {
+                    supplierStats[row.supplier] = { total: 0, count: 0, prices: [] };
+                }
+                supplierStats[row.supplier].total += row.ppl;
+                supplierStats[row.supplier].count += 1;
+                supplierStats[row.supplier].prices.push(row.ppl);
+            });
+
+            const supplierAverages = Object.entries(supplierStats).map(([supplier, stats]) => ({
+                supplier,
+                avgPrice: stats.total / stats.count,
+                submissions: stats.count,
+                minPrice: Math.min(...stats.prices),
+                maxPrice: Math.max(...stats.prices)
+            })).sort((a, b) => a.avgPrice - b.avgPrice);
+
+            return {
+                supplierAverages,
+                totalSubmissions: normalizedData.length
+            };
+        }
+        
+        function renderWidget(analysis) {
+            const contentDiv = document.getElementById('content');
+            const updateTime = document.getElementById('update-time');
+            
+            updateTime.textContent = `Updated ${new Date().toLocaleTimeString()}`;
+            
+            let html = '';
+            
+            // Show top 10 suppliers
+            const topSuppliers = analysis.supplierAverages.slice(0, 10);
+            
+            topSuppliers.forEach((supplier, idx) => {
+                html += `
+                    <div class="supplier-item ${idx < 3 ? 'top-3' : ''}">
+                        <div class="rank">#${idx + 1}</div>
+                        <div class="supplier-info">
+                            <div class="supplier-name">${supplier.supplier}</div>
+                            <div class="submissions">${supplier.submissions} submission${supplier.submissions !== 1 ? 's' : ''}</div>
+                        </div>
+                        <div class="price">
+                            ${supplier.avgPrice.toFixed(1)}<span class="price-unit">ppl</span>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            contentDiv.innerHTML = html;
+        }
+        
+        async function fetchData() {
+            try {
+                const response = await fetch(SHEET_URL);
+                
+                if (!response.ok) {
+                    throw new Error('Failed to fetch data');
+                }
+                
+                const text = await response.text();
+                const data = parseCSV(text);
+                const analysis = analyzeData(data);
+                
+                if (analysis) {
+                    renderWidget(analysis);
+                } else {
+                    throw new Error('No valid data found');
+                }
+            } catch (err) {
+                document.getElementById('content').innerHTML = `
+                    <div class="error">
+                        ⚠️ Unable to load data. Please try again later.
+                    </div>
+                `;
+                console.error('Error:', err);
+            }
+        }
+        
+        // Load data on page load
+        fetchData();
+        
+        // Refresh every 3 minutes
+        setInterval(fetchData, 180000);
+    </script>
+</body>
+</html>
